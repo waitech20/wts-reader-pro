@@ -248,7 +248,8 @@ document.addEventListener('DOMContentLoaded', function () {
     sessionStartTs: null,
     secondsRead: 0,
     wasPausedByHiddenTab: false,
-    retryCount: 0
+    retryCount: 0,
+    currentUtterance: null
   };
   applyDirection(state.lang);
 
@@ -503,6 +504,15 @@ document.addEventListener('DOMContentLoaded', function () {
   rowHighlight.appendChild(highlightBtn);
   secA11y.appendChild(rowHighlight);
 
+  // Reset to defaults
+  var secReset = panelSection('Reset');
+  var rowReset = el('div', 'wts-row', '');
+  var resetBtn = el('button', 'wts-chip', 'Reset to Defaults');
+  resetBtn.type = 'button';
+  resetBtn.addEventListener('click', function () { resetToDefaults(); });
+  rowReset.appendChild(resetBtn);
+  secReset.appendChild(rowReset);
+
   bar.appendChild(controlsRow);
   bar.appendChild(metaRow);
   bar.appendChild(panel);
@@ -712,17 +722,20 @@ document.addEventListener('DOMContentLoaded', function () {
     utter.volume = state.volume;
 
     utter.onboundary = function (e) {
+      if (state.currentUtterance !== utter) return; // sauti hii tayari imepitwa na wakati
       if (e.name === 'word' || e.charIndex != null) {
         highlightWordAt(chunk, sentenceOffset, e.charIndex, e.charLength || 1);
       }
     };
     utter.onend = function () {
+      if (state.currentUtterance !== utter) return; // ilighairiwa - usiendelee kuhesabu
       state.retryCount = 0;
       state.sentenceIndex++;
       savePlaybackPosition();
       speakCurrentSentence();
     };
     utter.onerror = function () {
+      if (state.currentUtterance !== utter) return; // ilighairiwa - usiendelee kuhesabu
       state.retryCount++;
       if (state.retryCount <= 2) {
         speakCurrentSentence(); // jaribu tena
@@ -733,6 +746,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
 
+    state.currentUtterance = utter;
     speechSynthesis.speak(utter);
     if (state.sentenceIndex === 0) highlightParagraph(chunk);
     status.textContent = 'Reading…';
@@ -765,6 +779,7 @@ document.addEventListener('DOMContentLoaded', function () {
     dispatchEvt('pause');
   }
   function stop() {
+    state.currentUtterance = null; // zuia onend/onerror ya sauti iliyoghairiwa kuendelea
     speechSynthesis.cancel();
     clearWordHighlight();
     chunks.forEach(function (c) { c.el.classList.remove('wts-reading-paragraph'); clearWordWrap(c); });
@@ -827,6 +842,44 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   function restartCurrentUtteranceIfPlaying() {
     if (state.playing) { speechSynthesis.cancel(); speakCurrentSentence(); }
+  }
+
+  function resetToDefaults() {
+    // Sauti / mwendo / toni / kiasi
+    state.rate = CONFIG.defaultRate;
+    state.pitch = CONFIG.defaultPitch;
+    state.volume = CONFIG.defaultVolume;
+    state.voiceName = null;
+    rateInput.value = state.rate; styleRangeFill(rateInput);
+    pitchInput.value = state.pitch; styleRangeFill(pitchInput);
+    volInput.value = state.volume; styleRangeFill(volInput);
+    refreshVoiceOptions();
+
+    // Lugha - rudisha kwenye ile iliyogunduliwa awali kwenye makala
+    state.lang = detectLanguage();
+    selLang.value = state.lang;
+    applyDirection(state.lang);
+    refreshVoiceOptions();
+
+    // Sleep timer
+    state.sleepTimerMinutes = 0;
+    clearTimeout(state.sleepTimeout);
+    Array.prototype.forEach.call(chipRow.children, function (c) { c.classList.remove('wts-active'); });
+    if (chipRow.children[0]) chipRow.children[0].classList.add('wts-active');
+
+    // Accessibility
+    document.body.classList.remove('wts-high-contrast');
+    contrastBtn.classList.remove('wts-active');
+    CONFIG.enableWordHighlight = true;
+    highlightBtn.classList.add('wts-active');
+
+    // Mwonekano (dark/light) - rudi kwenye upendeleo wa mfumo
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(prefersDark ? 'dark' : 'light');
+
+    persistSettings();
+    restartCurrentUtteranceIfPlaying();
+    showToast('Settings have been reset to default.', []);
   }
 
   function setPlayUIState() {
@@ -1050,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', function () {
     setPitch: function (p) { state.pitch = p; pitchInput.value = p; styleRangeFill(pitchInput); persistSettings(); restartCurrentUtteranceIfPlaying(); },
     setVolume: function (v) { state.volume = v; volInput.value = v; styleRangeFill(volInput); persistSettings(); restartCurrentUtteranceIfPlaying(); },
     setLanguage: function (l) { state.lang = l; selLang.value = l; refreshVoiceOptions(); persistSettings(); },
+    resetToDefaults: resetToDefaults,
     getStats: function () { try { return JSON.parse(localStorage.getItem(CONFIG.statsStorageKey) || '{}'); } catch (e) { return {}; } },
     getHistory: function () { try { return JSON.parse(localStorage.getItem(CONFIG.historyStorageKey) || '[]'); } catch (e) { return []; } },
     config: CONFIG,
