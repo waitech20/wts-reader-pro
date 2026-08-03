@@ -716,8 +716,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // ya sauti, ambayo ndiyo chanzo kikuu cha kuchelewa/kugandaa kati ya sentensi
     // kwenye baadhi ya vivinjari/simu.
     var startOffset = chunk.text.indexOf(sentenceText);
-    var speakText = chunk.text.slice(startOffset);
-
+    var speakText = sentenceText;
     // Ramani ya mahali kila sentensi inapoanzia ndani ya chunk.text, ili
     // tuweze kujua tuko sentensi gani wakati sauti inaendelea (kwa ajili ya
     // "resume position" na maendeleo sahihi).
