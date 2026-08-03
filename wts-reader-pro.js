@@ -707,13 +707,31 @@ document.addEventListener('DOMContentLoaded', function () {
       state.sentenceIndex = 0;
       if (state.chunkIndex >= chunks.length) { finishReading(); return; }
       chunk = chunks[state.chunkIndex];
-      highlightParagraph(chunk);
     }
     var sentenceText = chunk.sentences[state.sentenceIndex];
     if (!sentenceText) { state.sentenceIndex++; speakCurrentSentence(); return; }
 
-    var sentenceOffset = chunk.text.indexOf(sentenceText);
-    var utter = new SpeechSynthesisUtterance(normalizeForSpeech(sentenceText));
+    // Ongea AYA NZIMA kuanzia sentensi ya sasa mpaka mwisho wa aya (badala ya
+    // sentensi moja moja) - hii inapunguza sana idadi ya "restart" za injini
+    // ya sauti, ambayo ndiyo chanzo kikuu cha kuchelewa/kugandaa kati ya sentensi
+    // kwenye baadhi ya vivinjari/simu.
+    var startOffset = chunk.text.indexOf(sentenceText);
+    var speakText = chunk.text.slice(startOffset);
+
+    // Ramani ya mahali kila sentensi inapoanzia ndani ya chunk.text, ili
+    // tuweze kujua tuko sentensi gani wakati sauti inaendelea (kwa ajili ya
+    // "resume position" na maendeleo sahihi).
+    var sentenceOffsets = [];
+    (function buildOffsets() {
+      var acc = 0;
+      chunk.sentences.forEach(function (s) {
+        var idx = chunk.text.indexOf(s, acc);
+        sentenceOffsets.push(idx);
+        acc = idx + s.length;
+      });
+    })();
+
+    var utter = new SpeechSynthesisUtterance(normalizeForSpeech(speakText));
     var voice = getBestVoice(state.lang, state.voiceName);
     if (voice) { utter.voice = voice; utter.lang = voice.lang; state.voiceName = voice.name; }
     else { utter.lang = state.lang; }
@@ -723,14 +741,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     utter.onboundary = function (e) {
       if (state.currentUtterance !== utter) return; // sauti hii tayari imepitwa na wakati
-      if (e.name === 'word' || e.charIndex != null) {
-        highlightWordAt(chunk, sentenceOffset, e.charIndex, e.charLength || 1);
+      if (e.name && e.name !== 'word') return;
+      var absoluteIdx = startOffset + (e.charIndex || 0);
+      for (var i = sentenceOffsets.length - 1; i >= 0; i--) {
+        if (absoluteIdx >= sentenceOffsets[i]) {
+          if (state.sentenceIndex !== i) { state.sentenceIndex = i; savePlaybackPosition(); updateMeta(); }
+          break;
+        }
       }
+      highlightWordAt(chunk, 0, absoluteIdx, e.charLength || 1);
     };
     utter.onend = function () {
       if (state.currentUtterance !== utter) return; // ilighairiwa - usiendelee kuhesabu
       state.retryCount = 0;
-      state.sentenceIndex++;
+      state.chunkIndex++;
+      state.sentenceIndex = 0;
       savePlaybackPosition();
       speakCurrentSentence();
     };
@@ -741,14 +766,14 @@ document.addEventListener('DOMContentLoaded', function () {
         speakCurrentSentence(); // jaribu tena
       } else {
         state.retryCount = 0;
-        state.sentenceIndex++; // ruka sentensi yenye tatizo
+        state.chunkIndex++; state.sentenceIndex = 0; // ruka aya yenye tatizo
         speakCurrentSentence();
       }
     };
 
     state.currentUtterance = utter;
     speechSynthesis.speak(utter);
-    if (state.sentenceIndex === 0) highlightParagraph(chunk);
+    highlightParagraph(chunk);
     status.textContent = 'Reading…';
     updateMeta();
   }
